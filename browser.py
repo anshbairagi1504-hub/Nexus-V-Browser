@@ -259,6 +259,8 @@ class NexusVBrowser(QMainWindow):
         bar.addWidget(self.add_tab_btn)
 
         self.url_bar = QLineEdit()
+        self.url_bar.setPlaceholderText("Ask Google or type URL")
+
         self.url_bar.setObjectName("urlBar")
         self.url_bar.setPlaceholderText(
             "Search or enter a website address"
