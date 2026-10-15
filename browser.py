@@ -6,6 +6,7 @@ import py_compile
 import subprocess
 from pathlib import Path
 from urllib.parse import quote_plus
+import re
 from datetime import datetime
 from PyQt5.QtGui import QIcon
 
@@ -18,15 +19,17 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QTabWidget, QProgressBar, QComboBox,
     QMessageBox, QDialog, QListWidget, QListWidgetItem, QLabel,
-    QCheckBox, QFormLayout, QDialogButtonBox, QShortcut
+    QCheckBox, QFormLayout, QDialogButtonBox, QShortcut, QMenu,
+    QFileDialog, QSizeGrip
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineProfile, QWebEnginePage
 from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtGui import QDesktopServices
 
 
 # ================ CONFIGURATION ================
 APP_NAME = "Nexus-V Advanced Browser"
-CURRENT_VERSION = "1.0.3.4"
+CURRENT_VERSION = "1.0.9"
 
 GITHUB_REPO = "anshbairagi1504-hub/Nexus-V-Browser"
 GITHUB_BRANCH = "main"
@@ -43,6 +46,7 @@ RAW_SCRIPT_URL = (
 DATA_DIR = Path.home() / ".nexus_v_browser"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
+BOOKMARKS_FILE = DATA_DIR / "bookmarks.json"
 
 
 def is_private_view(view):
@@ -72,7 +76,9 @@ class UpdateInstallWorker(QThread):
         temp_path = None
 
         try:
-            response = requests.get(RAW_SCRIPT_URL, timeout=30)
+            response = requests.get(RAW_SCRIPT_URL, timeout=30, allow_redirects=True)
+            if not response.url.startswith("https://"):
+                raise ValueError("Update source must use HTTPS.")
             response.raise_for_status()
             new_code = response.text
 
@@ -203,20 +209,26 @@ class NexusVBrowser(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon("nexus_logo.png"))
+        # Frameless shell lets the browser controls sit beside the tab strip.
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setWindowTitle("Nexus-V")
 
-        self.settings = QSettings(
-            "NexusV", "AdvancedBrowser"
-        )
-        self.setWindowTitle(
-            f"{APP_NAME} - v{CURRENT_VERSION}"
-        )
+        self.settings = QSettings("NexusV", "AdvancedBrowser")
         self.resize(1320, 900)
         self.setMinimumSize(900, 600)
 
-        self.bookmarks = []
+        self.bookmarks = self.load_bookmarks()
         self.history = self.load_history()
         self.private_profiles = []
         self._update_silent = False
+        self._drag_pos = None
+        self._resize_edges = Qt.Edges()
+        self._resize_origin = None
+        self._resize_geometry = None
+        self._edge_margin = 7
+        self._size_grip = QSizeGrip(self)
+        self._size_grip.resize(16, 16)
+        self._size_grip.raise_()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -224,6 +236,29 @@ class NexusVBrowser(QMainWindow):
         self.main_layout = QVBoxLayout(central)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
+
+        # Minimal title strip: no permanent logo/version text; About is in ⋮.
+        self.title_bar = QWidget()
+        self.title_bar.setObjectName("titleBar")
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(8, 3, 5, 3)
+        title_layout.setSpacing(4)
+        title_layout.addStretch(1)
+        self.overflow_btn = self.make_button("⋮", "More options")
+        self.overflow_btn.setObjectName("overflowButton")
+        self.overflow_btn.clicked.connect(self.show_overflow_menu)
+        title_layout.addWidget(self.overflow_btn)
+        self.min_btn = self.make_button("—", "Minimize")
+        self.min_btn.clicked.connect(self.showMinimized)
+        title_layout.addWidget(self.min_btn)
+        self.max_btn = self.make_button("□", "Maximize / restore")
+        self.max_btn.clicked.connect(self.toggle_maximize)
+        title_layout.addWidget(self.max_btn)
+        self.close_btn = self.make_button("×", "Close browser")
+        self.close_btn.setObjectName("windowCloseButton")
+        self.close_btn.clicked.connect(self.close)
+        title_layout.addWidget(self.close_btn)
+        self.main_layout.addWidget(self.title_bar)
 
         self.top_bar = QWidget()
         bar = QHBoxLayout(self.top_bar)
@@ -270,59 +305,9 @@ class NexusVBrowser(QMainWindow):
         )
         bar.addWidget(self.url_bar, 1)
 
-        self.bookmark_btn = self.make_button(
-            "☆", "Bookmark this page"
-        )
-        self.bookmark_btn.clicked.connect(
-            self.add_current_bookmark
-        )
-        bar.addWidget(self.bookmark_btn)
-
-        self.bookmark_menu = QComboBox()
-        self.bookmark_menu.setMinimumWidth(125)
-        self.bookmark_menu.addItem("Bookmarks")
-        self.bookmark_menu.activated.connect(
-            self.open_bookmark
-        )
-        bar.addWidget(self.bookmark_menu)
-
-        self.download_btn = self.make_button(
-            "↓", "Downloads"
-        )
-        self.download_btn.clicked.connect(
-            self.show_downloads
-        )
-        bar.addWidget(self.download_btn)
-
-        self.history_btn = self.make_button(
-            "◷", "Browsing history"
-        )
-        self.history_btn.clicked.connect(self.show_history)
-        bar.addWidget(self.history_btn)
-
-        self.private_btn = self.make_button(
-            "Incognito", "Open a private tab"
-        )
-        self.private_btn.clicked.connect(
-            self.open_private_tab
-        )
-        bar.addWidget(self.private_btn)
-
-        self.settings_btn = self.make_button(
-            "⚙", "Settings"
-        )
-        self.settings_btn.clicked.connect(
-            self.open_settings
-        )
-        bar.addWidget(self.settings_btn)
-
-        self.update_btn = self.make_button(
-            "Update", "Check GitHub for updates"
-        )
-        self.update_btn.clicked.connect(
-            self.check_for_updates
-        )
-        bar.addWidget(self.update_btn)
+        # History, bookmarks, downloads, settings and update live in ⋮ menu.
+        self.update_btn = self.make_button("Update", "Check GitHub for updates")
+        self.update_btn.setVisible(False)
 
         self.main_layout.addWidget(self.top_bar)
 
@@ -345,7 +330,183 @@ class NexusVBrowser(QMainWindow):
         self.apply_theme()
         self.add_new_tab(QUrl("about:blank"), "Home")
         self.setup_shortcuts()
+        QWebEngineProfile.defaultProfile().downloadRequested.connect(self.handle_download)
         self.check_for_updates(silent=True)
+
+    def show_overflow_menu(self):
+        menu = QMenu(self)
+        menu.addAction("History", self.show_history)
+        menu.addAction("Bookmarks", self.show_bookmarks)
+        menu.addAction("Bookmark this page", self.add_current_bookmark)
+        menu.addAction("Downloads", self.show_downloads)
+        menu.addSeparator()
+        menu.addAction("Incognito tab", self.open_private_tab)
+        menu.addAction("Settings", self.open_settings)
+        menu.addAction("Check for updates", self.check_for_updates)
+        menu.addAction("About", self.show_about)
+        menu.exec_(self.overflow_btn.mapToGlobal(self.overflow_btn.rect().bottomLeft()))
+
+    def show_about(self):
+        QMessageBox.about(
+            self, "About Nexus-V",
+            f"<h3>{APP_NAME}</h3><p>Version: {CURRENT_VERSION}</p>"
+            "<p>A PyQt5-based web browser.</p>"
+        )
+
+    def toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.max_btn.setText("□")
+        else:
+            self.showMaximized()
+            self.max_btn.setText("❐")
+
+    def _edges_at(self, pos):
+        edges = Qt.Edges()
+        if pos.x() <= self._edge_margin:
+            edges |= Qt.LeftEdge
+        elif pos.x() >= self.width() - self._edge_margin:
+            edges |= Qt.RightEdge
+        if pos.y() <= self._edge_margin:
+            edges |= Qt.TopEdge
+        elif pos.y() >= self.height() - self._edge_margin:
+            edges |= Qt.BottomEdge
+        return edges
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and not self.isMaximized():
+            edges = self._edges_at(event.pos())
+            if edges:
+                self._resize_edges = edges
+                self._resize_origin = event.globalPos()
+                self._resize_geometry = self.geometry()
+                event.accept()
+                return
+            if event.pos().y() <= self.title_bar.height():
+                self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resize_edges and event.buttons() & Qt.LeftButton and self._resize_geometry is not None:
+            delta = event.globalPos() - self._resize_origin
+            rect = self._resize_geometry
+            left, top, right, bottom = rect.left(), rect.top(), rect.right(), rect.bottom()
+            if self._resize_edges & Qt.LeftEdge:
+                left = min(left + delta.x(), right - self.minimumWidth())
+            if self._resize_edges & Qt.RightEdge:
+                right = max(right + delta.x(), left + self.minimumWidth())
+            if self._resize_edges & Qt.TopEdge:
+                top = min(top + delta.y(), bottom - self.minimumHeight())
+            if self._resize_edges & Qt.BottomEdge:
+                bottom = max(bottom + delta.y(), top + self.minimumHeight())
+            self.setGeometry(left, top, right - left + 1, bottom - top + 1)
+            event.accept()
+            return
+        if self._drag_pos is not None and event.buttons() & Qt.LeftButton and not self.isMaximized():
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
+            return
+        if not self.isMaximized():
+            edges = self._edges_at(event.pos())
+            cursors = {
+                Qt.LeftEdge | Qt.TopEdge: Qt.SizeFDiagCursor,
+                Qt.RightEdge | Qt.BottomEdge: Qt.SizeFDiagCursor,
+                Qt.RightEdge | Qt.TopEdge: Qt.SizeBDiagCursor,
+                Qt.LeftEdge | Qt.BottomEdge: Qt.SizeBDiagCursor,
+                Qt.LeftEdge: Qt.SizeHorCursor,
+                Qt.RightEdge: Qt.SizeHorCursor,
+                Qt.TopEdge: Qt.SizeVerCursor,
+                Qt.BottomEdge: Qt.SizeVerCursor,
+            }
+            self.setCursor(cursors.get(edges, Qt.ArrowCursor))
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        self._resize_edges = Qt.Edges()
+        self._resize_origin = None
+        self._resize_geometry = None
+        super().mouseReleaseEvent(event)
+
+    def load_bookmarks(self):
+        try:
+            if BOOKMARKS_FILE.exists():
+                data = json.loads(BOOKMARKS_FILE.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return [item for item in data if isinstance(item, dict) and item.get("url")]
+        except (OSError, json.JSONDecodeError) as error:
+            print("Bookmark load error:", error)
+        return []
+
+    def save_bookmarks(self):
+        try:
+            BOOKMARKS_FILE.write_text(
+                json.dumps(self.bookmarks, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+        except OSError as error:
+            QMessageBox.warning(self, "Bookmarks", f"Could not save bookmarks: {error}")
+
+    def show_bookmarks(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Bookmarks")
+        dialog.resize(680, 440)
+        layout = QVBoxLayout(dialog)
+        listing = QListWidget()
+
+        def refresh():
+            listing.clear()
+            for item in self.bookmarks:
+                row = QListWidgetItem(f"{item.get('title', item['url'])}\n{item['url']}")
+                row.setData(Qt.UserRole, item.get("url", ""))
+                listing.addItem(row)
+
+        def open_selected():
+            item = listing.currentItem()
+            if item and item.data(Qt.UserRole):
+                view = self.current_view()
+                if view:
+                    view.setUrl(QUrl(item.data(Qt.UserRole)))
+                dialog.accept()
+
+        def remove_selected():
+            item = listing.currentItem()
+            if not item:
+                return
+            url = item.data(Qt.UserRole)
+            self.bookmarks = [b for b in self.bookmarks if b.get("url") != url]
+            self.save_bookmarks()
+            refresh()
+
+        layout.addWidget(listing)
+        buttons = QHBoxLayout()
+        open_btn = QPushButton("Open")
+        remove_btn = QPushButton("Remove")
+        close_btn = QPushButton("Close")
+        open_btn.clicked.connect(open_selected)
+        remove_btn.clicked.connect(remove_selected)
+        close_btn.clicked.connect(dialog.accept)
+        buttons.addWidget(open_btn)
+        buttons.addWidget(remove_btn)
+        buttons.addStretch()
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
+        listing.itemDoubleClicked.connect(lambda _item: open_selected())
+        refresh()
+        dialog.exec_()
+
+    def handle_download(self, download):
+        suggested = download.suggestedFileName() or "download"
+        target, _ = QFileDialog.getSaveFileName(
+            self, "Save download", str(Path.home() / "Downloads" / suggested)
+        )
+        if not target:
+            download.cancel()
+            return
+        download.setPath(target)
+        download.accept()
 
     def make_button(self, text, tooltip=""):
         button = QPushButton(text)
@@ -459,9 +620,10 @@ class NexusVBrowser(QMainWindow):
                 QProgressBar::chunk {
                     background: #7584ff;
                 }
-                QCheckBox {
-                    spacing: 8px;
-                }
+                QCheckBox { spacing: 8px; }
+                QWidget#titleBar { background: #111318; }
+                QPushButton#overflowButton { font-size: 16pt; padding: 2px 10px; border: none; }
+                QPushButton#windowCloseButton:hover { background: #d93025; color: white; }
             """)
         else:
             self.setStyleSheet("""
@@ -517,9 +679,10 @@ class NexusVBrowser(QMainWindow):
                     background: #e7eaf2;
                     border: none;
                 }
-                QProgressBar::chunk {
-                    background: #5667f5;
-                }
+                QProgressBar::chunk { background: #5667f5; }
+                QWidget#titleBar { background: #f4f6fb; }
+                QPushButton#overflowButton { font-size: 16pt; padding: 2px 10px; border: none; }
+                QPushButton#windowCloseButton:hover { background: #d93025; color: white; }
             """)
 
     # ================ HOME PAGE ================
@@ -653,11 +816,11 @@ class NexusVBrowser(QMainWindow):
                 <div class="sub">
                     Your space. Your web. Your browser.
                 </div>
-                <form action="https://duckduckgo.com/"
+                <form action="https://www.google.com/search"
                       method="get">
                     <input class="search" type="search"
                            name="q"
-                          placeholder="Ask Google or type URL"
+                          placeholder="Search Google or enter a website address"
 
                            autofocus>
                 </form>
@@ -784,20 +947,24 @@ class NexusVBrowser(QMainWindow):
         if not text:
             return
 
-        if " " in text or "." not in text:
-            template = self.settings.value(
-                "search_url",
-                "https://duckduckgo.com/?q={query}"
-            )
-            url = template.replace(
-                "{query}", quote_plus(text)
-            )
-        else:
-            if not text.startswith(
-                ("http://", "https://", "file://")
-            ):
+        explicit_scheme = re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", text)
+        looks_like_host = bool(
+            re.match(r"^(localhost|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?(/.*)?$", text)
+            or re.match(r"^[\w-]+(?:\.[\w-]+)+(?:[:/]\S*)?$", text)
+        )
+        if explicit_scheme or looks_like_host:
+            if not explicit_scheme:
                 text = "https://" + text
             url = text
+        else:
+            template = self.settings.value(
+                "search_url", "https://www.google.com/search?q={query}"
+            )
+            encoded = quote_plus(text)
+            url = template.replace("{query}", encoded)
+            if "{query}" not in template and encoded not in url:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}q={encoded}"
 
         view = self.current_view()
         if view:
@@ -956,27 +1123,12 @@ class NexusVBrowser(QMainWindow):
             )
             return
 
-        self.bookmarks.append({
-            "title": title,
-            "url": url
-        })
-        self.bookmark_menu.addItem(title, url)
+        self.bookmarks.append({"title": title, "url": url})
+        self.save_bookmarks()
 
         QMessageBox.information(
             self, "Bookmark", "Page bookmarked!"
         )
-
-    def open_bookmark(self, index):
-        if index <= 0:
-            return
-
-        url = self.bookmark_menu.itemData(index)
-        if url:
-            view = self.current_view()
-            if view:
-                view.setUrl(QUrl(str(url)))
-
-        self.bookmark_menu.setCurrentIndex(0)
 
     # ================ DOWNLOADS ================
     def show_downloads(self):
@@ -1129,7 +1281,14 @@ class NexusVBrowser(QMainWindow):
                 )
             return
 
-        if latest_version < CURRENT_VERSION:
+        def version_tuple(value):
+            return tuple(int(part) if part.isdigit() else part for part in re.split(r"[._-]", value))
+
+        try:
+            is_older = version_tuple(latest_version) < version_tuple(CURRENT_VERSION)
+        except TypeError:
+            is_older = False
+        if is_older:
             if not self._update_silent:
                 QMessageBox.information(
                     self,
@@ -1180,9 +1339,18 @@ class NexusVBrowser(QMainWindow):
             "A backup of the previous script was saved."
         )
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_size_grip"):
+            self._size_grip.move(
+                self.width() - self._size_grip.width(),
+                self.height() - self._size_grip.height()
+            )
+
     # ================ CLOSE EVENT ================
     def closeEvent(self, event):
         self.save_history()
+        self.save_bookmarks()
         event.accept()
 
 
@@ -1191,8 +1359,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setFont(QFont("Segoe UI", 10))
-
-    from PyQt5.QtGui import QDesktopServices
 
     browser = NexusVBrowser()
     browser.show()
