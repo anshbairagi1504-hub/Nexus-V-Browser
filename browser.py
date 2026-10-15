@@ -32,8 +32,8 @@ APP_NAME = "Nexus-V Advanced Browser"
 CURRENT_VERSION = "1.0.0"
 
 # GitHub repository ke owner/repo ko yahan set karein, example: "username/nexus-v"
-# Abhi blank hai kyunki aapki repository ka link abhi confirm nahi hua.
-GITHUB_REPO = ""
+# GitHub repository: https://github.com/anshbairagi1504-hub/Nexus-V-Browser
+GITHUB_REPO = "anshbairagi1504-hub/Nexus-V-Browser"
 GITHUB_BRANCH = "main"
 
 VERSION_URL = (
