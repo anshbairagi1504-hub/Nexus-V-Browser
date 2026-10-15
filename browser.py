@@ -29,7 +29,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 # ================ CONFIGURATION ================
 
 APP_NAME = "Nexus-V Advanced Browser"
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 
 # GitHub repository ke owner/repo ko yahan set karein, example: "username/nexus-v"
 # GitHub repository: https://github.com/anshbairagi1504-hub/Nexus-V-Browser
