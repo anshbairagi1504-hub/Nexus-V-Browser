@@ -22,7 +22,7 @@ from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 
 # ================ CONFIGURATION ================
 APP_NAME = "Nexus-V Advanced Browser"
-CURRENT_VERSION = "1.0.9"
+CURRENT_VERSION = "1.1.0"
 GITHUB_REPO = "anshbairagi1504-hub/Nexus-V-Browser"
 GITHUB_BRANCH = "main"
 
