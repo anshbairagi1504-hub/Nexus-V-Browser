@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QDialog, QListWidget, QListWidgetItem, QLabel,
     QCheckBox, QFormLayout, QDialogButtonBox, QShortcut
 )
-from PyQt5.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+from PyQt5.QtWebEngineWidgets import QWebEngineProfile, QWebEnginePage
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 
