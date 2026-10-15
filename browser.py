@@ -657,7 +657,8 @@ class NexusVBrowser(QMainWindow):
                       method="get">
                     <input class="search" type="search"
                            name="q"
-                           placeholder="Search the web..."
+                          placeholder="Ask Google or type URL"
+
                            autofocus>
                 </form>
                 <div class="grid">{cards}</div>
