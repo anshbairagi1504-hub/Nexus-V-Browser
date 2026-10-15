@@ -26,7 +26,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 # ================ CONFIGURATION ================
 APP_NAME = "Nexus-V Advanced Browser"
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.2"
 
 GITHUB_REPO = "anshbairagi1504-hub/Nexus-V-Browser"
 GITHUB_BRANCH = "main"
