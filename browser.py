@@ -1,4 +1,3 @@
-
 import sys
 import os
 import json
@@ -8,11 +7,13 @@ import subprocess
 from pathlib import Path
 from urllib.parse import quote_plus
 from datetime import datetime
+from PyQt5.QtGui import QIcon
 
 import requests
 
 from PyQt5.QtCore import QUrl, QThread, pyqtSignal, QSettings, Qt
 from PyQt5.QtGui import QFont, QKeySequence
+from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QTabWidget, QProgressBar, QComboBox,
@@ -25,7 +26,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 # ================ CONFIGURATION ================
 APP_NAME = "Nexus-V Advanced Browser"
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 
 GITHUB_REPO = "anshbairagi1504-hub/Nexus-V-Browser"
 GITHUB_BRANCH = "main"
@@ -201,6 +202,7 @@ class SettingsDialog(QDialog):
 class NexusVBrowser(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowIcon(QIcon("nexus_logo.png"))
 
         self.settings = QSettings(
             "NexusV", "AdvancedBrowser"
